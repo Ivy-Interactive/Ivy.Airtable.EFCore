@@ -10,13 +10,13 @@ internal sealed class AirtableQueryableMethodTranslatingExpressionVisitor : Quer
 {
     private readonly IFormulaExpressionFactory _formulaExpressionFactory;
     private readonly AirtableProjectionBindingExpressionVisitor _projectionBindingExpressionVisitor;
-    private readonly IMethodCallTranslatorProvider _methodCallTranslator;
+    private readonly IAirtableMethodCallTranslatorProvider _methodCallTranslator;
 
     public AirtableQueryableMethodTranslatingExpressionVisitor(
         QueryableMethodTranslatingExpressionVisitorDependencies dependencies,
         QueryCompilationContext queryCompilationContext,
         IFormulaExpressionFactory formulaExpressionFactory,
-        IMethodCallTranslatorProvider methodCallTranslator)
+        IAirtableMethodCallTranslatorProvider methodCallTranslator)
         : base(dependencies, queryCompilationContext, subquery: false)
     {
         _formulaExpressionFactory = formulaExpressionFactory;

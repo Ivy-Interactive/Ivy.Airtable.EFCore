@@ -1,48 +1,149 @@
-﻿using AirtableApiClient;
 using Microsoft.EntityFrameworkCore.Storage;
+using AirtableApiClient;
 
 namespace Airtable.EFCore.Storage.Internal;
 
-internal sealed class AirtableTypeMappingSource : TypeMappingSource
+public class AirtableTypeMappingSource : RelationalTypeMappingSource
 {
+    internal static readonly Dictionary<string, Type> TypeHints = new();
+    private static readonly Dictionary<Type, RelationalTypeMapping> _clrTypeMappings = new();
+    private static readonly Dictionary<string, RelationalTypeMapping> _storeTypeMappings = new(StringComparer.OrdinalIgnoreCase);
+
+    static AirtableTypeMappingSource()
+    {
+        RelationalTypeMapping MakeMapping(string name, Type clrType)
+            => clrType switch
+            {
+                Type t when t == typeof(string)   => new StringTypeMapping(name, null),
+                Type t when t == typeof(double)   => new DoubleTypeMapping(name),
+                Type t when t == typeof(int)      => new IntTypeMapping(name),
+                Type t when t == typeof(bool)     => new BoolTypeMapping(name),
+                Type t when t == typeof(TimeSpan) => new AirtableTimeSpanTypeMapping(name),
+                Type t                            => new AirtableTypeMapping(name, clrType),
+            };
+
+        //Note: if more than one entry below has the same name or CLR type, the first matching entry will be used when
+        //mapping from one to the other.
+        var mappings = new (string, Type)[]
+        {
+            ("multilineText", typeof(string)),
+            ("singleLineText", typeof(string)),
+            ("richText", typeof(string)),
+            ("email", typeof(string)),
+            ("url", typeof(string)),
+            ("phoneNumber", typeof(string)),
+
+            ("aiText", typeof(AirtableAiText)),
+
+            ("number", typeof(double)),
+            ("number", typeof(int)),
+
+            ("duration", typeof(TimeSpan)),
+            ("checkbox", typeof(bool)),
+            ("date", typeof(DateOnly)),
+            ("dateTime", typeof(DateTimeOffset)),
+            ("dateTime", typeof(DateTime)),
+            ("multipleAttachments", typeof(ICollection<AirtableAttachment>)),
+            ("multipleAttachments", typeof(AirtableAttachment)),
+            ("singleCollaborator", typeof(AirtableUser)),
+            ("multipleCollaborators", typeof(ICollection<AirtableUser>)),
+            ("barcode", typeof(AirtableBarcode)),
+            ("button", typeof(AirtableButton)),
+        };
+        foreach (var (name, clrType) in mappings)
+        {
+            var mapping = MakeMapping(name, clrType);
+            _storeTypeMappings.TryAdd(name, mapping);
+            _clrTypeMappings.TryAdd(clrType, mapping);
+            TypeHints.TryAdd(name, clrType);
+        }
+    }
+
     public AirtableTypeMappingSource(
-        TypeMappingSourceDependencies dependencies
-        )
-        : base(dependencies)
+        TypeMappingSourceDependencies dependencies,
+        RelationalTypeMappingSourceDependencies relationalDependencies)
+        : base(dependencies, relationalDependencies)
     {
     }
 
-    protected override CoreTypeMapping? FindMapping(in TypeMappingInfo mappingInfo)
+    protected override RelationalTypeMapping? FindMapping(in RelationalTypeMappingInfo mappingInfo)
     {
-        var clr = mappingInfo.ClrType;
+        var mapping = base.FindMapping(mappingInfo)
+            ?? FindRawMapping(mappingInfo);
 
-        if (clr == null) return base.FindMapping(mappingInfo);
-
-        if (clr == typeof(string))
+        if (mapping != null && mappingInfo.StoreTypeName != null)
         {
-            return new AirtableTypeMapping(clr);
+            mapping = mapping.WithStoreTypeAndSize(mappingInfo.StoreTypeName, null);
         }
 
-        if (clr == typeof(DateTimeOffset))
+        return mapping;
+    }
+
+    private RelationalTypeMapping? FindRawMapping(RelationalTypeMappingInfo mappingInfo)
+    {
+        var clrType = mappingInfo.ClrType;
+
+        RelationalTypeMapping? mapping;
+
+        if (clrType != null)
         {
-            return new AirtableTypeMapping(clr);
+            if (_clrTypeMappings.TryGetValue(clrType, out mapping))
+            {
+                return mapping;
+            }
+            else if (ShouldMapClrEnumerableType(clrType))
+            {
+                return new AirtableTypeMapping(mappingInfo.StoreTypeName ?? "unknownType", clrType);
+            }
         }
 
-        if (clr == typeof(AirtableAttachment))
+        var storeTypeName = mappingInfo.StoreTypeName;
+        if (storeTypeName != null && _storeTypeMappings.TryGetValue(storeTypeName, out mapping) && (clrType == null || mapping.ClrType.UnwrapNullableType() == clrType))
         {
-            return new AirtableTypeMapping(clr);
+            return mapping;
         }
 
-        if (clr.IsGenericType && clr.GenericTypeArguments[0] == typeof(AirtableAttachment))
+        return null;
+    }
+
+    private bool ShouldMapClrEnumerableType(in Type clr)
+    {
+        // Check if clr is IEnumerable<T>
+        Type? enumerableType = null;
+        if (clr.IsGenericType)
         {
-            return new AirtableTypeMapping(clr);
+            var genericTypeDefinition = clr.GetGenericTypeDefinition();
+            if (genericTypeDefinition == typeof(IEnumerable<>))
+            {
+                enumerableType = clr;
+            }
         }
 
-        if(clr == typeof(string[]))
+        // Check if clr implements IEnumerable<T>
+        if (enumerableType == null)
         {
-            return new AirtableTypeMapping(clr);
+            enumerableType = clr.GetInterfaces().FirstOrDefault(interface_ => interface_.IsGenericType && interface_.GetGenericTypeDefinition() == typeof(IEnumerable<>));
         }
 
-        return base.FindMapping(mappingInfo);
+        // If neither of the previous two cases are true, return false.
+        if (enumerableType == null)
+        {
+            return false;
+        }
+
+        // Check element type
+        var elem = clr.GenericTypeArguments.Length > 0
+            ? clr.GenericTypeArguments[0]
+            : clr.IsArray
+                ? clr.GetElementType()
+                : null;
+        if (elem == typeof(int)
+            || elem == typeof(double)
+            || elem == typeof(string))
+        {
+            return true;
+        }
+
+        return false;
     }
 }

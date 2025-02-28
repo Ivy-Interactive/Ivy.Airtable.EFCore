@@ -13,12 +13,12 @@ internal sealed class AirtableFormulaTranslatorExpressionVisitor : ExpressionVis
 
     private readonly IFormulaExpressionFactory _formulaExpressionFactory;
     private readonly IEntityType _entityType;
-    private readonly IMethodCallTranslatorProvider _methodCallTranslator;
+    private readonly IAirtableMethodCallTranslatorProvider _methodCallTranslator;
 
     public AirtableFormulaTranslatorExpressionVisitor(
         IFormulaExpressionFactory formulaExpressionFactory,
         IEntityType entityType,
-        IMethodCallTranslatorProvider methodCallTranslator)
+        IAirtableMethodCallTranslatorProvider methodCallTranslator)
     {
         _formulaExpressionFactory = formulaExpressionFactory;
         _entityType = entityType;

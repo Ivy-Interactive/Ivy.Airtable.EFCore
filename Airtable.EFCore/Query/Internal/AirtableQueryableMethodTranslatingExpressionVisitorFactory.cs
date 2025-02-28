@@ -7,12 +7,12 @@ internal sealed class AirtableQueryableMethodTranslatingExpressionVisitorFactory
 {
     private readonly QueryableMethodTranslatingExpressionVisitorDependencies _dependencies;
     private readonly IFormulaExpressionFactory _formulaExpressionFactory;
-    private readonly IMethodCallTranslatorProvider _methodCallTranslator;
+    private readonly IAirtableMethodCallTranslatorProvider _methodCallTranslator;
 
     public AirtableQueryableMethodTranslatingExpressionVisitorFactory(
         QueryableMethodTranslatingExpressionVisitorDependencies dependencies,
         IFormulaExpressionFactory formulaExpressionFactory,
-        IMethodCallTranslatorProvider methodCallTranslator)
+        IAirtableMethodCallTranslatorProvider methodCallTranslator)
     {
         _dependencies = dependencies;
         _formulaExpressionFactory = formulaExpressionFactory;

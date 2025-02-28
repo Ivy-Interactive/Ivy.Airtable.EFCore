@@ -17,11 +17,11 @@ internal sealed class AirtableProjectionBindingExpressionVisitor : ExpressionVis
     private readonly Dictionary<ProjectionMember, Expression> _projectionMapping = new();
     private readonly Stack<ProjectionMember> _projectionMembers = new();
     private readonly IFormulaExpressionFactory _formulaExpressionFactory;
-    private readonly IMethodCallTranslatorProvider _methodCallTranslatorProvider;
+    private readonly IAirtableMethodCallTranslatorProvider _methodCallTranslatorProvider;
 
     public AirtableProjectionBindingExpressionVisitor(
         IFormulaExpressionFactory formulaExpressionFactory,
-        IMethodCallTranslatorProvider methodCallTranslatorProvider)
+        IAirtableMethodCallTranslatorProvider methodCallTranslatorProvider)
     {
         _formulaExpressionFactory = formulaExpressionFactory;
         _methodCallTranslatorProvider = methodCallTranslatorProvider;

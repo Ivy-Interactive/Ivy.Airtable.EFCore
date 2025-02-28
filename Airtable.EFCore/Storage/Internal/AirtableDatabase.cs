@@ -1,10 +1,13 @@
-﻿using Airtable.EFCore.Infrastructure;
+using System.Text.Json;
+using Airtable.EFCore.Infrastructure;
 using AirtableApiClient;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Metadata;
 using Microsoft.EntityFrameworkCore.Storage;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Microsoft.EntityFrameworkCore.Update;
+using static Microsoft.EntityFrameworkCore.ScaffoldingModelExtensions;
 
 namespace Airtable.EFCore.Storage.Internal;
 
@@ -38,6 +41,14 @@ internal sealed class AirtableDatabase : Database
                 value = converter.ConvertToProvider(value);
             }
 
+            var mapping = item.GetTypeMapping();
+            if (mapping.JsonValueReaderWriter is {} json)
+            {
+                var jsonString = value == null
+                    ? "null"
+                    : json.ToJsonString(value);
+                value = JsonSerializer.Deserialize<object?>(jsonString);
+            }
             result.AddField(name, value);
         }
 

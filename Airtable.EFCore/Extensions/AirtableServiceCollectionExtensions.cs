@@ -5,11 +5,15 @@ using Airtable.EFCore.Metadata.Conventions;
 using Airtable.EFCore.Query.Internal;
 using Airtable.EFCore.Query.Internal.MethodTranslators;
 using Airtable.EFCore.Storage.Internal;
+using Airtable.EFCore.Update.Internal;
 using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Metadata;
 using Microsoft.EntityFrameworkCore.Metadata.Conventions.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Query;
 using Microsoft.EntityFrameworkCore.Storage;
+using Microsoft.EntityFrameworkCore.Update;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace Microsoft.EntityFrameworkCore;
@@ -19,23 +23,26 @@ public static class AirtableServiceCollectionExtensions
     [EditorBrowsable(EditorBrowsableState.Never)]
     public static IServiceCollection AddEntityFrameworkAirtableDatabase(this IServiceCollection serviceCollection)
     {
-        var builder = new EntityFrameworkServicesBuilder(serviceCollection)
+        var relationalBuilder = new EntityFrameworkRelationalServicesBuilder(serviceCollection)
+            .TryAdd<IRelationalTypeMappingSource, AirtableTypeMappingSource>()
+            .TryAdd<IProviderConventionSetBuilder, AirtableConventionSetBuilder>()
             .TryAdd<LoggingDefinitions, AirtableLoggingDefinitions>()
             .TryAdd<IDatabaseProvider, DatabaseProvider<AirtableOptionsExtension>>()
             .TryAdd<IDatabase, AirtableDatabase>()
             .TryAdd<IQueryContextFactory, AirtableQueryContextFactory>()
-            .TryAdd<ITypeMappingSource, AirtableTypeMappingSource>()
             .TryAdd<IShapedQueryCompilingExpressionVisitorFactory, AirtableShapedQueryCompilingExpressionVisitorFactory>()
             .TryAdd<IQueryableMethodTranslatingExpressionVisitorFactory, AirtableQueryableMethodTranslatingExpressionVisitorFactory>()
-            .TryAdd<IProviderConventionSetBuilder, AirtableConventionSetBuilder>()
+            .TryAdd<ISqlGenerationHelper, RelationalSqlGenerationHelper>()
+            .TryAdd<IUpdateSqlGenerator, NullUpdateSqlGenerator>()
+            .TryAdd<IQueryTranslationPostprocessorFactory, NullQueryTranslationPostprocessorFactory>()
             .TryAddProviderSpecificServices(
                 b => b.TryAddScoped<IAirtableClient, AirtableBaseWrapper>()
                       .TryAddScoped<IFormulaExpressionFactory, FormulaExpressionFactory>()
-                      .TryAddScoped<IMethodCallTranslatorProvider, AirtableMethodCallTranslatorProvider>()
+                      .TryAddScoped<IAirtableMethodCallTranslatorProvider, AirtableMethodCallTranslatorProvider>()
             )
             ;
 
-        builder.TryAddCoreServices();
+        relationalBuilder.TryAddCoreServices();
 
         return serviceCollection;
     }

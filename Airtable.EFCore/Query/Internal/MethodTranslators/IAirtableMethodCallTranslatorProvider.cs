@@ -3,7 +3,7 @@ using Microsoft.EntityFrameworkCore.Metadata;
 
 namespace Airtable.EFCore.Query.Internal.MethodTranslators;
 
-internal interface IMethodCallTranslatorProvider
+internal interface IAirtableMethodCallTranslatorProvider
 {
     FormulaExpression? Translate(
         IModel model,

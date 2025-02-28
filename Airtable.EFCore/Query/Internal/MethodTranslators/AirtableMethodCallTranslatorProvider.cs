@@ -3,7 +3,7 @@ using Microsoft.EntityFrameworkCore.Metadata;
 
 namespace Airtable.EFCore.Query.Internal.MethodTranslators;
 
-internal sealed class AirtableMethodCallTranslatorProvider : IMethodCallTranslatorProvider
+internal sealed class AirtableMethodCallTranslatorProvider : IAirtableMethodCallTranslatorProvider
 {
     private readonly List<IMethodCallTranslator> _translators = new();
 

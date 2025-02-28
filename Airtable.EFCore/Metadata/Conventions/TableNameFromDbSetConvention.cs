@@ -1,4 +1,5 @@
-﻿using Microsoft.EntityFrameworkCore.Metadata;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Metadata;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
 using Microsoft.EntityFrameworkCore.Metadata.Conventions;
 using Microsoft.EntityFrameworkCore.Metadata.Conventions.Infrastructure;
@@ -56,7 +57,7 @@ internal sealed class TableNameFromDbSetConvention :
         if (oldBaseType == null
             && newBaseType != null)
         {
-            entityTypeBuilder.HasNoAnnotation(AirtableAnnotationNames.TableName);
+            entityTypeBuilder.HasNoAnnotation(RelationalAnnotationNames.TableName);
         }
         else if (oldBaseType != null
                  && newBaseType == null
