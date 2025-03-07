@@ -14,6 +14,19 @@ namespace Airtable.EFCore.Scaffolding.Internal;
 
 public class AirtableDatabaseModelFactory : DatabaseModelFactory
 {
+    private struct OneToManyLink
+    {
+        public DatabaseForeignKey ForeignKey;
+        public string DestinationTableId;
+    }
+
+    private struct ManyToManyLink
+    {
+        public DatabaseTable SourceTable;
+        public DatabaseColumn SourceColumn;
+        public string DestinationTableId;
+    }
+
     public AirtableDatabaseModelFactory(IDiagnosticsLogger<DbLoggerCategory.Scaffolding> logger)
     {
         _logger = logger;
@@ -22,6 +35,8 @@ public class AirtableDatabaseModelFactory : DatabaseModelFactory
     IDiagnosticsLogger<DbLoggerCategory.Scaffolding> _logger;
     private Dictionary<string, FieldModel> _fieldMap = new();
     private Dictionary<string, DatabaseTable> _tableMap = new();
+    private List<OneToManyLink> _oneToManyLinks = new();
+    private List<ManyToManyLink> _manyToManyLinks = new();
 
     public override DatabaseModel Create(DbConnection connection, DatabaseModelFactoryOptions options)
         => throw new InvalidOperationException("Creating a DatabaseModel from a DbConnection is not supported. Please use a connection string instead.");
@@ -37,6 +52,8 @@ public class AirtableDatabaseModelFactory : DatabaseModelFactory
 
         _fieldMap.Clear();
         _tableMap.Clear();
+        _oneToManyLinks.Clear();
+        _manyToManyLinks.Clear();
 
         foreach (var tableModel in tableModels)
         {
@@ -63,6 +80,92 @@ public class AirtableDatabaseModelFactory : DatabaseModelFactory
         foreach (var missingTable in tableSet)
         {
             _logger.Logger.LogWarning("Unable to find selected table '{}' in Airtable base.", missingTable);
+        }
+
+        foreach (var link in _oneToManyLinks)
+        {
+            if (!_tableMap.TryGetValue(link.DestinationTableId, out var principalTable))
+            {
+                continue;
+            }
+
+            var table = link.ForeignKey.Table;
+            table.ForeignKeys.Add(link.ForeignKey);
+            var principalColumn = principalTable.PrimaryKey.Columns.First();
+            link.ForeignKey.PrincipalTable = principalTable;
+            link.ForeignKey.PrincipalColumns.Add(principalColumn);
+        }
+
+        foreach (var link in _manyToManyLinks)
+        {
+            if (!_tableMap.TryGetValue(link.DestinationTableId, out var destinationTable))
+            {
+                continue;
+            }
+
+            var destinationColumn = destinationTable.PrimaryKey.Columns.First();
+            var sourceTable = link.SourceTable;
+            var sourceColumn = sourceTable.PrimaryKey.Columns.First();
+
+            var junctionTable = new DatabaseTable
+            {
+                Database = databaseModel,
+                Name = $"Junction {sourceTable.Name} To {destinationTable.Name}",
+            };
+            databaseModel.Tables.Add(junctionTable);
+
+            var (sourceString, destinationString) = sourceTable == destinationTable
+                ? ("Source ", "Destination ")
+                : ("", "");
+
+            var sourceIdColumn = new DatabaseColumn
+            {
+                Table = junctionTable,
+                Name = $"{sourceString}{sourceTable.Name} Id",
+                StoreType = "singleLineText",
+                IsNullable = false,
+                DefaultValue = null,
+                IsStored = true,
+                ["ClrType"] = typeof(string),
+            };
+            junctionTable.Columns.Add(sourceIdColumn);
+
+            var destinationIdColumn = new DatabaseColumn
+            {
+                Table = junctionTable,
+                Name = $"{destinationString}{destinationTable.Name} Id",
+                StoreType = "singleLineText",
+                IsNullable = false,
+                DefaultValue = null,
+                IsStored = true,
+                ["ClrType"] = typeof(string),
+            };
+            junctionTable.Columns.Add(destinationIdColumn);
+
+            junctionTable.PrimaryKey = new DatabasePrimaryKey();
+            junctionTable.PrimaryKey.Columns.Add(sourceIdColumn);
+            junctionTable.PrimaryKey.Columns.Add(destinationIdColumn);
+
+            var sourceForeignKey = new DatabaseForeignKey
+            {
+                Table = junctionTable,
+                PrincipalTable = sourceTable,
+            };
+            sourceForeignKey.SetAnnotation(AirtableAnnotationNames.IsForwardDirectionForeignKey, true);
+            sourceForeignKey.SetAnnotation(AirtableAnnotationNames.LinkIdColumn, link.SourceColumn);
+            sourceForeignKey.Columns.Add(sourceIdColumn);
+            sourceForeignKey.PrincipalColumns.Add(sourceColumn);
+            junctionTable.ForeignKeys.Add(sourceForeignKey);
+
+            var destinationForeignKey = new DatabaseForeignKey
+            {
+                Table = junctionTable,
+                PrincipalTable = destinationTable,
+            };
+            destinationForeignKey.SetAnnotation(AirtableAnnotationNames.IsForwardDirectionForeignKey, false);
+            destinationForeignKey.Columns.Add(destinationIdColumn);
+            destinationForeignKey.PrincipalColumns.Add(destinationColumn);
+            junctionTable.ForeignKeys.Add(destinationForeignKey);
         }
 
         return databaseModel;
@@ -297,11 +400,28 @@ public class AirtableDatabaseModelFactory : DatabaseModelFactory
             {
                 if (linkOptions.PrefersSingleRecordLink)
                 {
+                    // If there's (probably) only one link, then map to a simple foreign key.
+                    var foreignKey = new DatabaseForeignKey
+                    {
+                        Table = table,
+                    };
+                    foreignKey.Columns.Add(column);
+                    _oneToManyLinks.Add(new OneToManyLink {
+                        ForeignKey = foreignKey,
+                        DestinationTableId = linkOptions.LinkedTableId });
+                    table.ForeignKeys.Add(foreignKey);
+
                     column.StoreType = "singleLineText";
                     column.SetAnnotation(AirtableAnnotationNames.IsLinkIdColumn, true);
                 }
                 else
                 {
+                    // If there may be more than one link, then map to an imaginary junction table.
+                    _manyToManyLinks.Add(new ManyToManyLink {
+                        SourceTable = table,
+                        SourceColumn = column,
+                        DestinationTableId = linkOptions.LinkedTableId });
+
                     addCollection = true;
                     column.StoreType = "singleLineText";
                     column.SetAnnotation(AirtableAnnotationNames.IsPluralLinkIdColumn, true);

@@ -18,6 +18,8 @@ public class AirtableDesignTimeServices : IDesignTimeServices
 #pragma warning disable EF1001 // Internal EF Core API usage.
             .TryAddProviderSpecificServices(
                 services => services
+                    .TryAddSingleton<ICandidateNamingService, AirtableCandidateNamingService>()
+                    .TryAddSingleton<ICSharpHelper, AirtableCSharpHelper>()
                     .TryAddSingleton<IScaffoldingModelFactory, AirtableScaffoldingModelFactory>())
             .TryAdd<IAnnotationCodeGenerator, AirtableAnnotationCodeGenerator>()
             .TryAdd<IDatabaseModelFactory, AirtableDatabaseModelFactory>()
