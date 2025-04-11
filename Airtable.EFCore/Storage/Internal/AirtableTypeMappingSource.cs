@@ -14,12 +14,17 @@ public class AirtableTypeMappingSource : RelationalTypeMappingSource
         RelationalTypeMapping MakeMapping(string name, Type clrType)
             => clrType switch
             {
-                Type t when t == typeof(string)   => new StringTypeMapping(name, null),
-                Type t when t == typeof(double)   => new DoubleTypeMapping(name),
-                Type t when t == typeof(int)      => new IntTypeMapping(name),
-                Type t when t == typeof(bool)     => new BoolTypeMapping(name),
-                Type t when t == typeof(TimeSpan) => new AirtableTimeSpanTypeMapping(name),
-                Type t                            => new AirtableTypeMapping(name, clrType),
+                Type t when t == typeof(string)                          => new StringTypeMapping(name, null),
+                Type t when t == typeof(double)                          => new DoubleTypeMapping(name),
+                Type t when t == typeof(int)                             => new IntTypeMapping(name),
+                Type t when t == typeof(bool)                            => new BoolTypeMapping(name),
+                Type t when t == typeof(TimeSpan)                        => new AirtableTimeSpanTypeMapping(name),
+                Type t when t == typeof(AirtableAttachment)              => new AirtableAttachmentTypeMapping(name, isCollection: false),
+                Type t when t == typeof(ICollection<AirtableAttachment>) => new AirtableAttachmentTypeMapping(name, isCollection: true),
+                Type t when t == typeof(AirtableUser)                    => new AirtableUserTypeMapping(name, isCollection: false),
+                Type t when t == typeof(ICollection<AirtableUser>)       => new AirtableUserTypeMapping(name, isCollection: true),
+                Type t when t == typeof(AirtableBarcode)                 => new AirtableBarcodeTypeMapping(name),
+                Type t                                                   => new AirtableTypeMapping(name, clrType),
             };
 
         //Note: if more than one entry below has the same name or CLR type, the first matching entry will be used when
