@@ -1,5 +1,4 @@
 using Airtable.EFCore.ChangeTracking;
-using Airtable.EFCore.Storage.Json;
 using Microsoft.EntityFrameworkCore.ChangeTracking;
 using Microsoft.EntityFrameworkCore.Storage;
 
@@ -16,10 +15,7 @@ internal sealed class AirtableUserTypeMapping : RelationalTypeMapping
                         : typeof(AirtableUser),
                     comparer: isCollection
                         ? UserCollectionComparer
-                        : UserComparer,
-                    jsonValueReaderWriter: isCollection
-                        ? new AirtableJsonCollectionOfReferencesReaderWriter<List<AirtableUser>, AirtableUser>(AirtableJsonUserReaderWriter.Instance)
-                        : AirtableJsonUserReaderWriter.Instance),
+                        : UserComparer),
                 storeType))
     {
     }

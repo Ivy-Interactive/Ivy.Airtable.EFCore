@@ -18,7 +18,7 @@ public class AirtableTypeMappingSource : RelationalTypeMappingSource
                 Type t when t == typeof(double)                          => new DoubleTypeMapping(name),
                 Type t when t == typeof(int)                             => new IntTypeMapping(name),
                 Type t when t == typeof(bool)                            => new BoolTypeMapping(name),
-                Type t when t == typeof(TimeSpan)                        => new AirtableTimeSpanTypeMapping(name),
+                Type t when t == typeof(TimeSpan)                        => new TimeSpanTypeMapping(name),
                 Type t when t == typeof(AirtableAttachment)              => new AirtableAttachmentTypeMapping(name, isCollection: false),
                 Type t when t == typeof(ICollection<AirtableAttachment>) => new AirtableAttachmentTypeMapping(name, isCollection: true),
                 Type t when t == typeof(AirtableUser)                    => new AirtableUserTypeMapping(name, isCollection: false),

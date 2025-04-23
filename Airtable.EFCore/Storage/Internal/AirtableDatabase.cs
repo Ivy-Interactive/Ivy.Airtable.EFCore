@@ -1,4 +1,3 @@
-using System.Text.Json;
 using Airtable.EFCore.Infrastructure;
 using AirtableApiClient;
 using Microsoft.EntityFrameworkCore;
@@ -7,7 +6,6 @@ using Microsoft.EntityFrameworkCore.Metadata;
 using Microsoft.EntityFrameworkCore.Storage;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Microsoft.EntityFrameworkCore.Update;
-using static Microsoft.EntityFrameworkCore.ScaffoldingModelExtensions;
 
 namespace Airtable.EFCore.Storage.Internal;
 
@@ -41,14 +39,37 @@ internal sealed class AirtableDatabase : Database
                 value = converter.ConvertToProvider(value);
             }
 
-            var mapping = item.GetTypeMapping();
-            if (mapping.JsonValueReaderWriter is {} json)
+            switch (value)
             {
-                var jsonString = value == null
-                    ? "null"
-                    : json.ToJsonString(value);
-                value = JsonSerializer.Deserialize<object?>(jsonString);
+                case TimeSpan timeSpan:
+                {
+                    value = timeSpan.TotalSeconds;
+                    break;
+                }
+
+                case AirtableAttachment a:
+                {
+                    value = a.WrittenVersion();
+                    break;
+                }
+                case IEnumerable<AirtableAttachment> attachments:
+                {
+                    value = attachments.Select(a => a.WrittenVersion()).ToArray();
+                    break;
+                }
+
+                case AirtableUser user:
+                {
+                    value = user.WrittenVersion();
+                    break;
+                }
+                case IEnumerable<AirtableUser> users:
+                {
+                    value = users.Select(u => u.WrittenVersion()).ToArray();
+                    break;
+                }
             }
+
             result.AddField(name, value);
         }
 

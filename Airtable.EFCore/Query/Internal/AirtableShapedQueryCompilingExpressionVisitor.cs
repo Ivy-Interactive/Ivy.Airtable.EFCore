@@ -2,9 +2,9 @@ using System.Collections;
 using System.Diagnostics.CodeAnalysis;
 using System.Linq.Expressions;
 using System.Reflection;
-using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using Airtable.EFCore.Storage;
 using Airtable.EFCore.Storage.Internal;
 using AirtableApiClient;
 using Microsoft.EntityFrameworkCore;
@@ -13,7 +13,6 @@ using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Metadata;
 using Microsoft.EntityFrameworkCore.Query;
 using Microsoft.EntityFrameworkCore.Storage;
-using Microsoft.EntityFrameworkCore.Storage.Json;
 
 namespace Airtable.EFCore.Query.Internal;
 
@@ -43,22 +42,6 @@ internal sealed class AirtableShapedQueryCompilingExpressionVisitor : ShapedQuer
                     new[] { typeof(JsonElement), typeof(JsonSerializerOptions) })
                 ?? throw new InvalidOperationException("Could not find method ReadRaw");
 
-        private static readonly MethodInfo _visitorReadSingleValueWithReaderWriterMethod =
-            typeof(AirtableProjectionBindingRemovingVisitorBase)
-                .GetMethod(
-                    nameof(AirtableProjectionBindingRemovingVisitorBase.ReadSingleValue),
-                    BindingFlags.NonPublic | BindingFlags.Static,
-                    new[] { typeof(JsonElement), typeof(JsonValueReaderWriter) })
-                ?? throw new InvalidOperationException("Could not find method ReadSingleValue");
-
-        private static readonly MethodInfo _visitorReadRawWithReaderWriterMethod =
-            typeof(AirtableProjectionBindingRemovingVisitorBase)
-                .GetMethod(
-                    nameof(AirtableProjectionBindingRemovingVisitorBase.ReadRaw),
-                    BindingFlags.NonPublic | BindingFlags.Static,
-                    new[] { typeof(JsonElement), typeof(JsonValueReaderWriter) })
-                ?? throw new InvalidOperationException("Could not find method ReadRaw");
-
         private readonly ParameterExpression _recordParameter;
         private readonly bool _trackQueryResults;
         private readonly IDictionary<ParameterExpression, Expression> _materializationContextBindings
@@ -72,6 +55,7 @@ internal sealed class AirtableShapedQueryCompilingExpressionVisitor : ShapedQuer
             {
                 Converters = {
                     new JsonStringEnumConverter(),
+                    new JsonNumberTimeSpanConverter(),
                 },
             };
         }
@@ -155,7 +139,7 @@ internal sealed class AirtableShapedQueryCompilingExpressionVisitor : ShapedQuer
                 if (projection.Expression is TablePropertyReferenceExpression tableProperty)
                 {
                     return CreateGetValueExpression(
-                        null,
+                        _recordParameter,
                         tableProperty.Name,
                         projectionBindingExpression.Type);
                 }
@@ -192,28 +176,19 @@ internal sealed class AirtableShapedQueryCompilingExpressionVisitor : ShapedQuer
                         (ParameterExpression)((MethodCallExpression)methodCallExpression.Arguments[0]).Object];
                 }
 
-                return CreateGetValueExpression(property);
+                return CreateGetValueExpression(innerExpression, property);
             }
 
             return base.VisitMethodCall(methodCallExpression);
         }
 
-        private Expression CreateGetValueExpression(CoreTypeMapping? mapping, string name, Type type)
+        private Expression CreateGetValueExpression(Expression innerExpression, string name, Type type)
         {
             var resultVariable = Expression.Variable(type);
             var jsonElementObj = Expression.Variable(typeof(object));
             var fields = Expression.Variable(typeof(IDictionary<string, object>));
             var isArray = type != typeof(string) && typeof(IEnumerable).IsAssignableFrom(type);
-            MethodInfo readMethod;
-            var readerWriter = mapping?.JsonValueReaderWriter;
-            if (readerWriter != null)
-            {
-                readMethod = isArray ? _visitorReadRawWithReaderWriterMethod : _visitorReadSingleValueWithReaderWriterMethod;
-            }
-            else
-            {
-                readMethod = isArray ? _visitorReadRawMethod : _visitorReadSingleValueMethod;
-            }
+            var readMethod = isArray ? _visitorReadRawMethod : _visitorReadSingleValueMethod;
 
             var block = new Expression[]
             {
@@ -236,9 +211,7 @@ internal sealed class AirtableShapedQueryCompilingExpressionVisitor : ShapedQuer
                             Expression.Convert(
                                 jsonElementObj,
                                 typeof(JsonElement)),
-                            readerWriter == null
-                                ? _jsonOptionsExpression
-                                : Expression.Constant(readerWriter))),
+                            _jsonOptionsExpression)),
                     Expression.Assign(resultVariable, Expression.Default(type))),
 
                 resultVariable
@@ -255,14 +228,14 @@ internal sealed class AirtableShapedQueryCompilingExpressionVisitor : ShapedQuer
                 block);
         }
 
-        private Expression CreateGetValueExpression(IProperty property)
+        private Expression CreateGetValueExpression(Expression innerExpression, IProperty property)
         {
             if (property.IsPrimaryKey())
             {
                 return CreateGetRecordIdExpression();
             }
 
-            return CreateGetValueExpression(property.GetTypeMapping(), property.GetColumnName() ?? property.Name, property.ClrType);
+            return CreateGetValueExpression(innerExpression, property.GetColumnName() ?? property.Name, property.ClrType);
         }
 
         private Expression CreateGetRecordIdExpression() => Expression.Property(_recordParameter, nameof(AirtableRecord.Id));
@@ -288,32 +261,6 @@ internal sealed class AirtableShapedQueryCompilingExpressionVisitor : ShapedQuer
             }
 
             return jsonElement.Deserialize<T>(jsonSerializerOptions);
-        }
-
-        [return: MaybeNull]
-        private static T ReadRaw<T>(JsonElement jsonElement, JsonValueReaderWriter readerWriter)
-        {
-            var jsonString = JsonSerializer.Serialize(jsonElement);
-            var readerManager = new Utf8JsonReaderManager(new JsonReaderData(Encoding.UTF8.GetBytes(jsonString)), null);
-            readerManager.MoveNext();
-            return (T?)readerWriter.FromJson(ref readerManager, null);
-        }
-
-        [return: MaybeNull]
-        private static T ReadSingleValue<T>(JsonElement jsonElement, JsonValueReaderWriter readerWriter)
-        {
-            if (jsonElement.ValueKind == JsonValueKind.Array)
-            {
-                if (jsonElement.GetArrayLength() == 0) return default;
-                jsonElement = jsonElement[0];
-            }
-
-            if (jsonElement.ValueKind is JsonValueKind.Null or JsonValueKind.Undefined)
-            {
-                return default;
-            }
-    
-            return ReadRaw<T>(jsonElement, readerWriter);
         }
 
         private Expression CreateReadRecordExpression(ParameterExpression recordParameter, string alias)
