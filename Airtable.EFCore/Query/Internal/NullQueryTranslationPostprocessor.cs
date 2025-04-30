@@ -3,13 +3,12 @@ using Microsoft.EntityFrameworkCore.Query;
 
 namespace Airtable.EFCore.Query.Internal;
 
-public class NullQueryTranslationPostprocessor : RelationalQueryTranslationPostprocessor
+public class NullQueryTranslationPostprocessor : QueryTranslationPostprocessor
 {
     public NullQueryTranslationPostprocessor(
         QueryTranslationPostprocessorDependencies dependencies,
-        RelationalQueryTranslationPostprocessorDependencies relationalDependencies,
         RelationalQueryCompilationContext queryCompilationContext)
-        : base(dependencies, relationalDependencies, queryCompilationContext)
+        : base(dependencies, queryCompilationContext)
     {
     }
 
