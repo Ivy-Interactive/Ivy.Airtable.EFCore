@@ -378,7 +378,7 @@ internal sealed class AirtableShapedQueryCompilingExpressionVisitor : ShapedQuer
         return shapedQueryExpression.QueryExpression;
     }
 
-    private sealed class QueryingEnumerable<T> : IAsyncEnumerable<T>
+    private sealed class QueryingEnumerable<T> : IAsyncEnumerable<T>, IEnumerable<T>
     {
         private readonly AirtableQueryContext _airtableQueryContext;
         private readonly SelectExpression _selectExpression;
@@ -400,6 +400,9 @@ internal sealed class AirtableShapedQueryCompilingExpressionVisitor : ShapedQuer
             _standalone = standalone;
             _base = _airtableQueryContext.AirtableClient;
         }
+
+        public IEnumerator<T> GetEnumerator() => throw new NotSupportedException("Synchronous queries are not supported by Airtable.EFCore. Please use Async versions instead.");
+        IEnumerator IEnumerable.GetEnumerator() => GetEnumerator();
 
         public async IAsyncEnumerator<T> GetAsyncEnumerator(CancellationToken cancellationToken = default)
         {
