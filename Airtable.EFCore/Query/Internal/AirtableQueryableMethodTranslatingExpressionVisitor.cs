@@ -49,6 +49,30 @@ internal sealed class AirtableQueryableMethodTranslatingExpressionVisitor : Quer
                 new ProjectionBindingExpression(queryExpression, new ProjectionMember(), typeof(ValueBuffer)),
                 false));
 
+    private ShapedQueryExpression? TranslateFirstOrSingleOrDefault(ShapedQueryExpression source, LambdaExpression? predicate, Type returnType, bool returnDefault, bool single)
+    {
+        var rootExpression = (SelectExpression)source.QueryExpression;
+
+        if (predicate != null)
+        {
+            var newSource = TranslateWhere(source, predicate);
+            if (newSource == null)
+            {
+                return null;
+            }
+
+            source = newSource;
+        }
+
+        // For SingleOrDefault, set the limit to 2 so that if there is more than 1 matching element, an exception will be thrown.
+        var limit = single ? 2 : 1;
+        rootExpression.Limit = Expression.Constant(limit);
+
+        return source.ShaperExpression.Type != returnType
+            ? source.UpdateShaperExpression(Expression.Convert(source.ShaperExpression, returnType))
+            : source;
+    }
+
     protected override QueryableMethodTranslatingExpressionVisitor CreateSubqueryVisitor()
     {
         throw new NotImplementedException();
@@ -110,26 +134,7 @@ internal sealed class AirtableQueryableMethodTranslatingExpressionVisitor : Quer
     }
 
     protected override ShapedQueryExpression? TranslateFirstOrDefault(ShapedQueryExpression source, LambdaExpression? predicate, Type returnType, bool returnDefault)
-    {
-        var rootExpression = (SelectExpression)source.QueryExpression;
-
-        if (predicate != null)
-        {
-            var newSource = TranslateWhere(source, predicate);
-            if (newSource == null)
-            {
-                return null;
-            }
-
-            source = newSource;
-        }
-
-        rootExpression.Limit = Expression.Constant(1);
-
-        return source.ShaperExpression.Type != returnType
-            ? source.UpdateShaperExpression(Expression.Convert(source.ShaperExpression, returnType))
-            : source;
-    }
+        => TranslateFirstOrSingleOrDefault(source, predicate, returnType, returnDefault, single: false);
 
     protected override ShapedQueryExpression? TranslateGroupBy(ShapedQueryExpression source, LambdaExpression keySelector, LambdaExpression? elementSelector, LambdaExpression? resultSelector)
     {
@@ -226,9 +231,7 @@ internal sealed class AirtableQueryableMethodTranslatingExpressionVisitor : Quer
     }
 
     protected override ShapedQueryExpression? TranslateSingleOrDefault(ShapedQueryExpression source, LambdaExpression? predicate, Type returnType, bool returnDefault)
-    {
-        throw new NotImplementedException();
-    }
+        => TranslateFirstOrSingleOrDefault(source, predicate, returnType, returnDefault, single: true);
 
     protected override ShapedQueryExpression? TranslateSkip(ShapedQueryExpression source, Expression count)
     {
