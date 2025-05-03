@@ -110,7 +110,19 @@ internal sealed class AirtableQueryableMethodTranslatingExpressionVisitor : Quer
 
     protected override ShapedQueryExpression? TranslateCount(ShapedQueryExpression source, LambdaExpression? predicate)
     {
-        throw new NotImplementedException();
+        if (predicate != null)
+        {
+            var newSource = TranslateWhere(source, predicate);
+            if (newSource == null)
+            {
+                return null;
+            }
+
+            source = newSource;
+        }
+
+        return source.UpdateQueryExpression(
+            new CountExpression(source.QueryExpression));
     }
 
     protected override ShapedQueryExpression? TranslateDefaultIfEmpty(ShapedQueryExpression source, Expression? defaultValue)

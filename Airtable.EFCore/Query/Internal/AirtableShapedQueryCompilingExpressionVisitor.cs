@@ -335,6 +335,38 @@ internal sealed class AirtableShapedQueryCompilingExpressionVisitor : ShapedQuer
         }
     }
 
+    private static async IAsyncEnumerable<int> CountImplAsync<T>(IAsyncEnumerable<T> values)
+    {
+        var count = 0;
+        var enumerator = values.GetAsyncEnumerator();
+        while (await enumerator.MoveNextAsync())
+        {
+            count++;
+        }
+        yield return count;
+    }
+
+    private static IEnumerable<int> CountImpl<T>(IEnumerable<T> values)
+    {
+        var count = 0;
+        var enumerator = values.GetEnumerator();
+        while (enumerator.MoveNext())
+        {
+            count++;
+        }
+        yield return count;
+    }
+
+    private static MethodInfo CountImplAsyncMethod = typeof(AirtableShapedQueryCompilingExpressionVisitor)
+        .GetMethods(BindingFlags.NonPublic | BindingFlags.Static)
+        .FirstOrDefault(m => m.Name == nameof(CountImplAsync) && m.IsGenericMethod)
+        ?? throw new InvalidOperationException("CountImplAsync<T> method not found.");
+
+    private static MethodInfo CountImplMethod = typeof(AirtableShapedQueryCompilingExpressionVisitor)
+        .GetMethods(BindingFlags.NonPublic | BindingFlags.Static)
+        .FirstOrDefault(m => m.Name == nameof(CountImpl) && m.IsGenericMethod)
+        ?? throw new InvalidOperationException("CountImpl<T> method not found.");
+
     public AirtableShapedQueryCompilingExpressionVisitor(
         ShapedQueryCompilingExpressionVisitorDependencies dependencies,
         QueryCompilationContext queryCompilationContext)
@@ -344,7 +376,15 @@ internal sealed class AirtableShapedQueryCompilingExpressionVisitor : ShapedQuer
 
     protected override Expression VisitShapedQuery(ShapedQueryExpression shapedQueryExpression)
     {
-        if (shapedQueryExpression.QueryExpression is SelectExpression selectExpression)
+        var innerExpression = shapedQueryExpression.QueryExpression;
+        var shouldGetCount = false;
+        if (shapedQueryExpression.QueryExpression is CountExpression countExpression)
+        {
+            shouldGetCount = true;
+            innerExpression = countExpression.EnumerableExpression;
+        }
+
+        if (innerExpression is SelectExpression selectExpression)
         {
             selectExpression.ApplyProjection();
 
@@ -365,7 +405,7 @@ internal sealed class AirtableShapedQueryCompilingExpressionVisitor : ShapedQuer
                 QueryCompilationContext.QueryContextParameter,
                 recordParameter);
 
-            return Expression.New(
+            var enumerable = Expression.New(
                 typeof(QueryingEnumerable<>).MakeGenericType(shaperLambda.ReturnType).GetConstructors().First(),
                 Expression.Convert(QueryCompilationContext.QueryContextParameter, typeof(AirtableQueryContext)),
                 Expression.Constant(selectExpression),
@@ -373,6 +413,18 @@ internal sealed class AirtableShapedQueryCompilingExpressionVisitor : ShapedQuer
                 Expression.Constant(
                         QueryCompilationContext.QueryTrackingBehavior == QueryTrackingBehavior.NoTrackingWithIdentityResolution)
                 );
+
+            shapedQueryExpression = shapedQueryExpression.UpdateQueryExpression(enumerable);
+        }
+
+        if (shouldGetCount)
+        {
+            shapedQueryExpression = shapedQueryExpression.UpdateQueryExpression(
+                Expression.Call(
+                    QueryCompilationContext.IsAsync
+                        ? CountImplAsyncMethod.MakeGenericMethod(shapedQueryExpression.Type)
+                        : CountImplMethod.MakeGenericMethod(shapedQueryExpression.Type),
+                    shapedQueryExpression.QueryExpression));
         }
 
         return shapedQueryExpression.QueryExpression;
@@ -494,5 +546,6 @@ internal sealed class AirtableShapedQueryCompilingExpressionVisitor : ShapedQuer
             }
             while (response.Offset != null);
         }
+
     }
 }
