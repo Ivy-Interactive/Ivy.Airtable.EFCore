@@ -1,5 +1,4 @@
 using System.Data.Common;
-using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata;
 using Microsoft.EntityFrameworkCore.Scaffolding;
@@ -19,9 +18,9 @@ public class AirtableDatabaseModelFactory : DatabaseModelFactory
         _logger = logger;
     }
 
-    IDiagnosticsLogger<DbLoggerCategory.Scaffolding> _logger;
-    private Dictionary<string, FieldModel> _fieldMap = new();
-    private Dictionary<string, DatabaseTable> _tableMap = new();
+    readonly IDiagnosticsLogger<DbLoggerCategory.Scaffolding> _logger;
+    private readonly Dictionary<string, FieldModel> _fieldMap = new();
+    private readonly Dictionary<string, DatabaseTable> _tableMap = new();
 
     public override DatabaseModel Create(DbConnection connection, DatabaseModelFactoryOptions options)
         => throw new InvalidOperationException("Creating a DatabaseModel from a DbConnection is not supported. Please use a connection string instead.");
@@ -42,7 +41,7 @@ public class AirtableDatabaseModelFactory : DatabaseModelFactory
         {
             foreach (var fieldModel in tableModel.Fields)
             {
-                _fieldMap.Add(fieldModel.Id, fieldModel);
+                _fieldMap.Add(fieldModel.Id!, fieldModel);
             }
         }
 
@@ -51,11 +50,11 @@ public class AirtableDatabaseModelFactory : DatabaseModelFactory
         var databaseModel = new DatabaseModel();
         foreach (var tableModel in tableModels)
         {
-            if (shouldRestrictTables && !tableSet.Contains(tableModel.Name))
+            if (shouldRestrictTables && !tableSet.Contains(tableModel.Name!))
             {
                 continue;
             }
-            tableSet.Remove(tableModel.Name);
+            tableSet.Remove(tableModel.Name!);
 
             MakeTableModel(databaseModel, tableModel);
         }
@@ -73,8 +72,11 @@ public class AirtableDatabaseModelFactory : DatabaseModelFactory
         var connectionOptions = new AirtableDatabaseConnectionStringBuilder(connectionString);
         using var airtableBase = new AirtableBase(connectionOptions.ApiKey, connectionOptions.BaseId);
         var baseSchemaResponse = await airtableBase.GetBaseSchema();
-        if (!baseSchemaResponse.Success) throw baseSchemaResponse.AirtableApiError;
-        return baseSchemaResponse.Tables.ToList();
+        if (!baseSchemaResponse.Success)
+        {
+            throw baseSchemaResponse.AirtableApiError ?? new Exception("Unknown error retrieving base schema.");
+        }
+        return baseSchemaResponse.Tables?.ToList() ?? [];
     }
 
     private void MakeTableModel(DatabaseModel databaseModel, TableModel tableModel)
@@ -82,7 +84,7 @@ public class AirtableDatabaseModelFactory : DatabaseModelFactory
         var table = new DatabaseTable
         {
             Database = databaseModel,
-            Name = tableModel.Name,
+            Name = tableModel.Name!,
             Comment = tableModel.Description,
         };
         databaseModel.Tables.Add(table);
@@ -100,7 +102,7 @@ public class AirtableDatabaseModelFactory : DatabaseModelFactory
         };
         table.Columns.Add(primaryKeyColumn);
 
-        _tableMap.Add(tableModel.Id, table);
+        _tableMap.Add(tableModel.Id!, table);
 
         foreach (var fieldModel in tableModel.Fields)
         {
@@ -119,9 +121,9 @@ public class AirtableDatabaseModelFactory : DatabaseModelFactory
         var column = new DatabaseColumn
         {
             Table = table,
-            Name = fieldModel.Name,
+            Name = fieldModel.Name!,
             IsNullable = true,
-            StoreType = fieldModel.Type,
+            StoreType = fieldModel.Type.ToApiString(),
             DefaultValue = null,
             Comment = fieldModel.Description,
         };
@@ -130,43 +132,44 @@ public class AirtableDatabaseModelFactory : DatabaseModelFactory
         var mapNumberToInt = false;
         var addCollection = false;
 
+        var mappedFieldType = fieldModel.Type;
+        var mappedFieldModel = fieldModel;
         switch (fieldModel.Type)
         {
-            case "formula":
+            case FieldEnum.Formula:
             {
-                var options = ParseOptions<FormulaTypeOptions>(fieldModel.Options);
-                if (options != null && options.Result != null)
+                if (fieldModel.TryGetOptions<FormulaModelOptions>(out var options) && options?.Result != null)
                 {
-                    column.StoreType = options.Result.Type;
+                    mappedFieldType = options.Result.Type;
+                    mappedFieldModel = options.Result;
                     column.ValueGenerated = ValueGenerated.OnAddOrUpdate;
                 }
                 break;
             }
-            case "rollup":
+            case FieldEnum.Rollup:
             {
-                var options = ParseOptions<RollupTypeOptions>(fieldModel.Options);
-                if (options != null && options.Result != null)
+                if (fieldModel.TryGetOptions<RollupModelOptions>(out var options) && options?.Result != null)
                 {
-                    column.StoreType = options.Result.Type;
+                    mappedFieldType = options.Result.Type;
+                    mappedFieldModel = options.Result;
                     column.ValueGenerated = ValueGenerated.OnAddOrUpdate;
                 }
                 break;
             }
-            case "multipleLookupValues":
+            case FieldEnum.MultipleLookupValues:
             {
                 addCollection = true;
-                var options = ParseOptions<LookupTypeOptions>(fieldModel.Options);
-                if (options != null && options.Result != null)
+                if (fieldModel.TryGetOptions<LookupModelOptions>(out var options) && options?.Result != null)
                 {
-                    column.StoreType = options.Result.Type;
+                    mappedFieldType = options.Result.Type;
+                    mappedFieldModel = options.Result;
                     column.ValueGenerated = ValueGenerated.OnAddOrUpdate;
-                    if (options.IsValid)
+                    if (options.IsValid && options.RecordLinkFieldId != null)
                     {
                         var linkField = _fieldMap[options.RecordLinkFieldId];
-                        if (linkField.Type == "multipleRecordLinks")
+                        if (linkField.Type == FieldEnum.MultipleRecordLinks)
                         {
-                            var linkOptions = ParseOptions<MultipleRecordLinksTypeOptions>(linkField.Options);
-                            if (linkOptions != null && linkOptions.PrefersSingleRecordLink)
+                            if (linkField.TryGetOptions<LinkToAnotherRecordModelOptions>(out var linkOptions) && linkOptions != null && linkOptions.PrefersSingleRecordLink)
                             {
                                 addCollection = false;
                             }
@@ -175,149 +178,151 @@ public class AirtableDatabaseModelFactory : DatabaseModelFactory
                 }
                 break;
             }
-            case "createdTime":
+            case FieldEnum.CreatedTime:
             {
-                var options = ParseOptions<CreatedTimeTypeOptions>(fieldModel.Options);
-                if (options != null && options.Result != null)
+                if (fieldModel.TryGetOptions<CreatedTimeModelOptions>(out var options) && options?.Result != null)
                 {
-                    if (options.Result.Type == "dateTime" || options.Result.Type == "date")
+                    if (options.Result.Type is FieldEnum.DateTime or FieldEnum.Date)
                     {
-                        column.StoreType = options.Result.Type;
+                        mappedFieldType = options.Result.Type;
+                        mappedFieldModel = options.Result;
                         column.ValueGenerated = ValueGenerated.OnAdd;
                     }
                 }
                 break;
             }
-            case "lastModifiedTime":
+            case FieldEnum.LastModifiedTime:
             {
-                var options = ParseOptions<LastModifiedTimeTypeOptions>(fieldModel.Options);
-                if (options != null && options.IsValid && options.Result != null)
+                if (fieldModel.TryGetOptions<LastModifiedTimeModelOptions>(out var options) && options?.Result != null)
                 {
-                    if (options.Result.Type == "dateTime" || options.Result.Type == "date")
+                    if (options.Result.Type is FieldEnum.DateTime or FieldEnum.Date)
                     {
-                        column.StoreType = options.Result.Type;
+                        mappedFieldType = options.Result.Type;
+                        mappedFieldModel = options.Result;
                         column.ValueGenerated = ValueGenerated.OnAddOrUpdate;
                     }
                 }
                 break;
             }
-            case "autoNumber":
+            case FieldEnum.AutoNumber:
             {
-                column.StoreType = "number";
+                mappedFieldType = FieldEnum.Number;
                 column.ValueGenerated = ValueGenerated.OnAdd;
                 mapNumberToInt = true;
                 break;
             }
-            case "count":
+            case FieldEnum.Count:
             {
-                column.StoreType = "number";
+                mappedFieldType = FieldEnum.Number;
                 column.ValueGenerated = ValueGenerated.OnAddOrUpdate;
                 mapNumberToInt = true;
                 break;
             }
-            case "createdBy":
+            case FieldEnum.CreatedBy:
             {
-                column.StoreType = "singleCollaborator";
+                mappedFieldType = FieldEnum.SingleCollaborator;
                 column.ValueGenerated = ValueGenerated.OnAdd;
                 break;
             }
-            case "lastModifiedBy":
+            case FieldEnum.LastModifiedBy:
             {
-                column.StoreType = "singleCollaborator";
+                mappedFieldType = FieldEnum.SingleCollaborator;
                 column.ValueGenerated = ValueGenerated.OnAddOrUpdate;
                 break;
             }
         }
 
-        switch (column.StoreType)
+        switch (mappedFieldType)
         {
-            case "number":
+            case FieldEnum.Number:
             {
-                var options = ParseOptions<NumberTypeOptions>(fieldModel.Options);
-                if (options != null && options.Precision == 0)
+                if (mappedFieldModel.TryGetOptions<NumberModelOptions>(out var options) && options != null && options.Precision == 0)
                 {
                     mapNumberToInt = true;
                 }
                 break;
             }
-            case "currency":
+            case FieldEnum.Currency:
             {
-                var options = ParseOptions<CurrencyTypeOptions>(fieldModel.Options);
-                column.StoreType = "number";
-                if (options != null && options.Precision == 0)
+                mappedFieldType = FieldEnum.Number;
+                if (mappedFieldModel.TryGetOptions<CurrencyModelOptions>(out var options) && options != null && options.Precision == 0)
                 {
                     mapNumberToInt = true;
                 }
                 break;
             }
-            case "percent":
+            case FieldEnum.Percent:
             {
-                column.StoreType = "number";
+                mappedFieldType = FieldEnum.Number;
                 // No need to parse options here. An integer percentage like 12% would be represented as 0.12, so we need a floating point number regardless of precision.
                 break;
             }
-            case "rating":
+            case FieldEnum.Rating:
             {
-                var options = ParseOptions<RatingTypeOptions>(fieldModel.Options);
-                column.StoreType = "number";
+                mappedFieldType = FieldEnum.Number;
                 mapNumberToInt = true;
-                if (options != null && column.Comment == null)
+                if (mappedFieldModel.TryGetOptions<RatingModelOptions>(out var options) && options != null && column.Comment == null)
                 {
                     column.Comment = $"Range: 1-{options.Max} {options.Icon}s";
                 }
                 break;
             }
-            case "checkbox":
+        }
+
+        switch (mappedFieldType)
+        {
+            case FieldEnum.Checkbox:
             {
                 column.IsNullable = false;
                 break;
             }
-            case "singleSelect":
+            case FieldEnum.SingleSelect:
             {
-                column.StoreType = "singleLineText";
+                mappedFieldType = FieldEnum.SingleLineText;
                 break;
             }
-            case "multipleSelects":
+            case FieldEnum.MultipleSelects:
             {
-                column.StoreType = "singleLineText";
+                mappedFieldType = FieldEnum.SingleLineText;
                 addCollection = true;
                 break;
             }
-            case "externalSyncSource":
+            case FieldEnum.ExternalSyncSource:
             {
-                column.StoreType = "singleLineText";
+                mappedFieldType = FieldEnum.SingleLineText;
                 break;
             }
         }
 
-        if (fieldModel.Type == "multipleRecordLinks")
+        if (fieldModel.Type is FieldEnum.MultipleRecordLinks)
         {
-            var linkOptions = ParseOptions<MultipleRecordLinksTypeOptions>(fieldModel.Options);
-            if (linkOptions != null)
+            if (fieldModel.TryGetOptions<LinkToAnotherRecordModelOptions>(out var linkOptions) && linkOptions != null)
             {
                 if (linkOptions.PrefersSingleRecordLink)
                 {
-                    column.StoreType = "singleLineText";
+                    mappedFieldType = FieldEnum.SingleLineText;
                     column.SetAnnotation(AirtableAnnotationNames.IsLinkIdColumn, true);
                 }
                 else
                 {
                     addCollection = true;
-                    column.StoreType = "singleLineText";
+                    mappedFieldType = FieldEnum.SingleLineText;
                     column.SetAnnotation(AirtableAnnotationNames.IsPluralLinkIdColumn, true);
                 }
             }
         }
 
-        if (StringComparer.OrdinalIgnoreCase.Equals(fieldModel.Name.Trim(), "id"))
+        column.StoreType = mappedFieldType.ToApiString();
+
+        if (StringComparer.OrdinalIgnoreCase.Equals(fieldModel.Name?.Trim(), "id"))
         {
             // If there is already a field named "Id", rename the record ID column to "Record Id".
             primaryKeyColumn.Name = "Record Id";
         }
 
-        if (AirtableTypeMappingSource.TypeHints.TryGetValue(column.StoreType, out var clrType))
+        if (AirtableTypeMappingSource.TypeHints.TryGetValue(mappedFieldType, out var clrType))
         {
-            if (column.StoreType == "number" && mapNumberToInt)
+            if (mappedFieldType is FieldEnum.Number && mapNumberToInt)
             {
                 clrType = typeof(int);
             }
@@ -329,20 +334,4 @@ public class AirtableDatabaseModelFactory : DatabaseModelFactory
             column.IsStored = column.ValueGenerated != null;
         }
     }
-
-#nullable enable
-    private TypeOptions? ParseOptions<TypeOptions>(object options)
-        where TypeOptions: class
-    {
-        var optionsElement = options as JsonElement?;
-        if (optionsElement == null)
-        {
-            return null;
-        }
-
-        var optionsJson = JsonSerializer.Serialize(optionsElement);
-        return JsonSerializer.Deserialize<TypeOptions>(optionsJson);
-    }
-#nullable restore
-
 }

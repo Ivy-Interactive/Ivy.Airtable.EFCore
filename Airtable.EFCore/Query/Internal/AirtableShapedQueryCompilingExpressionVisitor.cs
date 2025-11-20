@@ -393,7 +393,7 @@ internal sealed class AirtableShapedQueryCompilingExpressionVisitor : ShapedQuer
             var shaper = shapedQueryExpression.ShaperExpression;
 
             shaper = new AirtableRecordInjectingExpressionVisitor().Visit(shaper);
-            shaper = InjectEntityMaterializers(shaper);
+            shaper = InjectStructuralTypeMaterializers(shaper);
             shaper = new AirtableProjecttionBindingRemovingVisitor(
                 selectExpression,
                 recordParameter,
@@ -447,7 +447,7 @@ internal sealed class AirtableShapedQueryCompilingExpressionVisitor : ShapedQuer
         {
             _airtableQueryContext = airtableQueryContext;
             _selectExpression = selectExpression;
-            _formulaGenerator = new FormulaGenerator(airtableQueryContext.ParameterValues);
+            _formulaGenerator = new FormulaGenerator(airtableQueryContext.Parameters);
             _shaper = shaper;
             _standalone = standalone;
             _base = _airtableQueryContext.AirtableClient;
@@ -497,7 +497,7 @@ internal sealed class AirtableShapedQueryCompilingExpressionVisitor : ShapedQuer
                 _selectExpression.Limit switch
                 {
                     null => default(int?),
-                    ParameterExpression param => Convert.ToInt32(_airtableQueryContext.ParameterValues[param.Name!]),
+                    ParameterExpression param => Convert.ToInt32(_airtableQueryContext.Parameters[param.Name!]),
                     ConstantExpression constant => constant.GetConstantValue<int>(),
                     _ => throw new InvalidOperationException("Failed to convert limit expression")
                 };

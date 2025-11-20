@@ -5,60 +5,60 @@ namespace Airtable.EFCore.Storage.Internal;
 
 public class AirtableTypeMappingSource : RelationalTypeMappingSource
 {
-    internal static readonly Dictionary<string, Type> TypeHints = new();
-    private static readonly Dictionary<Type, RelationalTypeMapping> _clrTypeMappings = new();
-    private static readonly Dictionary<string, RelationalTypeMapping> _storeTypeMappings = new(StringComparer.OrdinalIgnoreCase);
+    internal static readonly Dictionary<FieldEnum, Type> TypeHints = [];
+    private static readonly Dictionary<Type, RelationalTypeMapping> _clrTypeMappings = [];
+    private static readonly Dictionary<string, RelationalTypeMapping> _storeTypeMappings = [];
 
     static AirtableTypeMappingSource()
     {
-        RelationalTypeMapping MakeMapping(string name, Type clrType)
+        RelationalTypeMapping MakeMapping(FieldEnum type, Type clrType)
             => clrType switch
             {
-                Type t when t == typeof(string)                          => new StringTypeMapping(name, null),
-                Type t when t == typeof(double)                          => new DoubleTypeMapping(name),
-                Type t when t == typeof(int)                             => new IntTypeMapping(name),
-                Type t when t == typeof(bool)                            => new BoolTypeMapping(name),
-                Type t when t == typeof(TimeSpan)                        => new TimeSpanTypeMapping(name),
-                Type t when t == typeof(AirtableAttachment)              => new AirtableAttachmentTypeMapping(name, isCollection: false),
-                Type t when t == typeof(ICollection<AirtableAttachment>) => new AirtableAttachmentTypeMapping(name, isCollection: true),
-                Type t when t == typeof(AirtableUser)                    => new AirtableUserTypeMapping(name, isCollection: false),
-                Type t when t == typeof(ICollection<AirtableUser>)       => new AirtableUserTypeMapping(name, isCollection: true),
-                Type t when t == typeof(AirtableBarcode)                 => new AirtableBarcodeTypeMapping(name),
-                Type t                                                   => new AirtableTypeMapping(name, clrType),
+                Type t when t == typeof(string)                          => new StringTypeMapping(type.ToApiString(), null),
+                Type t when t == typeof(double)                          => new DoubleTypeMapping(type.ToApiString()),
+                Type t when t == typeof(int)                             => new IntTypeMapping(type.ToApiString()),
+                Type t when t == typeof(bool)                            => new BoolTypeMapping(type.ToApiString()),
+                Type t when t == typeof(TimeSpan)                        => new TimeSpanTypeMapping(type.ToApiString()),
+                Type t when t == typeof(AirtableAttachment)              => new AirtableAttachmentTypeMapping(type.ToApiString(), isCollection: false),
+                Type t when t == typeof(ICollection<AirtableAttachment>) => new AirtableAttachmentTypeMapping(type.ToApiString(), isCollection: true),
+                Type t when t == typeof(AirtableUser)                    => new AirtableUserTypeMapping(type.ToApiString(), isCollection: false),
+                Type t when t == typeof(ICollection<AirtableUser>)       => new AirtableUserTypeMapping(type.ToApiString(), isCollection: true),
+                Type t when t == typeof(AirtableBarcode)                 => new AirtableBarcodeTypeMapping(type.ToApiString()),
+                Type t                                                   => new AirtableTypeMapping(type.ToApiString(), clrType),
             };
 
         //Note: if more than one entry below has the same name or CLR type, the first matching entry will be used when
         //mapping from one to the other.
-        var mappings = new (string, Type)[]
+        var mappings = new (FieldEnum, Type)[]
         {
-            ("multilineText", typeof(string)),
-            ("singleLineText", typeof(string)),
-            ("richText", typeof(string)),
-            ("email", typeof(string)),
-            ("url", typeof(string)),
-            ("phoneNumber", typeof(string)),
+            (FieldEnum.MultilineText, typeof(string)),
+            (FieldEnum.SingleLineText, typeof(string)),
+            (FieldEnum.RichText, typeof(string)),
+            (FieldEnum.Email, typeof(string)),
+            (FieldEnum.Url, typeof(string)),
+            (FieldEnum.PhoneNumber, typeof(string)),
 
-            ("aiText", typeof(AirtableAiText)),
+            (FieldEnum.AiText, typeof(AirtableAiText)),
 
-            ("number", typeof(double)),
-            ("number", typeof(int)),
+            (FieldEnum.Number, typeof(double)),
+            (FieldEnum.Number, typeof(int)),
 
-            ("duration", typeof(TimeSpan)),
-            ("checkbox", typeof(bool)),
-            ("date", typeof(DateOnly)),
-            ("dateTime", typeof(DateTimeOffset)),
-            ("dateTime", typeof(DateTime)),
-            ("multipleAttachments", typeof(ICollection<AirtableAttachment>)),
-            ("multipleAttachments", typeof(AirtableAttachment)),
-            ("singleCollaborator", typeof(AirtableUser)),
-            ("multipleCollaborators", typeof(ICollection<AirtableUser>)),
-            ("barcode", typeof(AirtableBarcode)),
-            ("button", typeof(AirtableButton)),
+            (FieldEnum.Duration, typeof(TimeSpan)),
+            (FieldEnum.Checkbox, typeof(bool)),
+            (FieldEnum.Date, typeof(DateOnly)),
+            (FieldEnum.DateTime, typeof(DateTimeOffset)),
+            (FieldEnum.DateTime, typeof(DateTime)),
+            (FieldEnum.MultipleAttachments, typeof(ICollection<AirtableAttachment>)),
+            (FieldEnum.MultipleAttachments, typeof(AirtableAttachment)),
+            (FieldEnum.SingleCollaborator, typeof(AirtableUser)),
+            (FieldEnum.MultipleCollaborators, typeof(ICollection<AirtableUser>)),
+            (FieldEnum.Barcode, typeof(AirtableBarcode)),
+            (FieldEnum.Button, typeof(AirtableButton)),
         };
         foreach (var (name, clrType) in mappings)
         {
             var mapping = MakeMapping(name, clrType);
-            _storeTypeMappings.TryAdd(name, mapping);
+            _storeTypeMappings.TryAdd(name.ToApiString(), mapping);
             _clrTypeMappings.TryAdd(clrType, mapping);
             TypeHints.TryAdd(name, clrType);
         }
@@ -103,7 +103,7 @@ public class AirtableTypeMappingSource : RelationalTypeMappingSource
         }
 
         var storeTypeName = mappingInfo.StoreTypeName;
-        if (storeTypeName != null && _storeTypeMappings.TryGetValue(storeTypeName, out mapping) && (clrType == null || mapping.ClrType.UnwrapNullableType() == clrType))
+        if (storeTypeName != null && _storeTypeMappings.TryGetValue(storeTypeName, out mapping) && (clrType == null || mapping?.ClrType.UnwrapNullableType() == clrType))
         {
             return mapping;
         }

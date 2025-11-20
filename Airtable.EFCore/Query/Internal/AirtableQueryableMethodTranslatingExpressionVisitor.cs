@@ -168,6 +168,11 @@ internal sealed class AirtableQueryableMethodTranslatingExpressionVisitor : Quer
         throw new NotImplementedException();
     }
 
+    protected override ShapedQueryExpression? TranslateRightJoin(ShapedQueryExpression outer, ShapedQueryExpression inner, LambdaExpression outerKeySelector, LambdaExpression innerKeySelector, LambdaExpression resultSelector)
+    {
+        throw new NotImplementedException();
+    }
+
     protected override ShapedQueryExpression? TranslateLastOrDefault(ShapedQueryExpression source, LambdaExpression? predicate, Type returnType, bool returnDefault)
     {
         throw new NotImplementedException();

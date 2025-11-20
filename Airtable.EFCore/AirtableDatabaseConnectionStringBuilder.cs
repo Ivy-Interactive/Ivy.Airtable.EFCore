@@ -72,7 +72,10 @@ public class AirtableDatabaseConnectionStringBuilder : DbConnectionStringBuilder
     }
 
     public AirtableDatabaseConnectionStringBuilder(string? connectionString)
-        => ConnectionString = connectionString;
+    {
+        ConnectionString = connectionString;
+    }
+
 
     public virtual string BaseId
     {
@@ -108,7 +111,9 @@ public class AirtableDatabaseConnectionStringBuilder : DbConnectionStringBuilder
 
     public override object? this[string keyword]
     {
+#pragma warning disable CS8764
         get => GetAt(GetIndex(keyword));
+#pragma warning restore CS8764
         set
         {
             if (value == null)
@@ -120,11 +125,17 @@ public class AirtableDatabaseConnectionStringBuilder : DbConnectionStringBuilder
             switch (GetIndex(keyword))
             {
                 case Keywords.BaseId:
+#pragma warning disable CS8601
                     BaseId = Convert.ToString(value, CultureInfo.InvariantCulture);
+#pragma warning restore CS8601
+
                     return;
 
                 case Keywords.ApiKey:
+#pragma warning disable CS8601
                     ApiKey = Convert.ToString(value, CultureInfo.InvariantCulture);
+#pragma warning restore CS8601
+
                     return;
 
                 default:
@@ -163,7 +174,9 @@ public class AirtableDatabaseConnectionStringBuilder : DbConnectionStringBuilder
     public override bool ShouldSerialize(string keyword)
         => _keywords.TryGetValue(keyword, out var index) && base.ShouldSerialize(_validKeywords[(int)index]);
 
+#pragma warning disable CS8765
     public override bool TryGetValue(string keyword, out object? value)
+#pragma warning restore CS8765
     {
         if (!_keywords.TryGetValue(keyword, out var index))
         {
