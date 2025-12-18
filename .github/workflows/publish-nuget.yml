@@ -28,26 +28,6 @@ jobs:
       with:
         name: package
         path: './obj/output'
-  publish-internal:
-    runs-on: ubuntu-latest
-    needs: build-pack
-    steps:
-    - name: Download artifact
-      uses: actions/download-artifact@v2
-      with:
-        name: package
-        path: './obj/output'
-    - name: Setup .NET
-      uses: actions/setup-dotnet@v3
-      with:
-        dotnet-version: 10.0.x
-        source-url: https://nuget.pkg.github.com/uaresponders/index.json
-      env:
-        NUGET_AUTH_TOKEN: ${{secrets.GITHUB_TOKEN}}
-    - name: Push generated package to GitHub registry
-      run: dotnet nuget push ./obj/output/*.nupkg --skip-duplicate --source  https://nuget.pkg.github.com/uaresponders/index.json --api-key ${GITHUB_TOKEN} --no-symbols
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
   publish-nuget:
     runs-on: ubuntu-latest
     needs: build-pack
