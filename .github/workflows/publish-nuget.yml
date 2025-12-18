@@ -45,4 +45,4 @@ jobs:
         run: dotnet pack Airtable.EFCore/Airtable.EFCore.csproj --configuration Release --no-build --output ./artifacts /p:Version=$VERSION
 
       - name: Publish to NuGet
-        run: dotnet nuget push ./artifacts/*.nupkg --api-key ${{ secrets.NUGET_TOKEN }} --source ${{ env.NUGET_SOURCE }} --skip-duplicate
+        run: dotnet nuget push ./artifacts/*.nupkg --api-key ${{ secrets.NUGET_API_KEY }} --source ${{ env.NUGET_SOURCE }} --skip-duplicate
