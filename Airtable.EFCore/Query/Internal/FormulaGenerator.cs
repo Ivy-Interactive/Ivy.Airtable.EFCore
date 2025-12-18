@@ -34,6 +34,10 @@ internal sealed class FormulaGenerator : FormulaExpressionVisitor
             {
                 recordIdValue = ResolveParameter(parameterExpression);
             }
+            else if (recordIdValue is FormulaQueryParameterExpression queryParameterExpression)
+            {
+                recordIdValue = ResolveQueryParameter(queryParameterExpression);
+            }
 
             if (recordIdValue is FormulaConstantExpression constant)
             {
@@ -142,6 +146,11 @@ internal sealed class FormulaGenerator : FormulaExpressionVisitor
         return VisitConstant(ResolveParameter(parameterExpression));
     }
 
+    protected override Expression VisitQueryParameter(FormulaQueryParameterExpression queryParameterExpression)
+    {
+        return VisitConstant(ResolveQueryParameter(queryParameterExpression));
+    }
+
     private FormulaConstantExpression ResolveParameter(FormulaParameterExpression parameterExpression)
     {
         var name = parameterExpression.ParameterExpression.Name ?? throw new InvalidOperationException("Parameter name is null");
@@ -149,6 +158,15 @@ internal sealed class FormulaGenerator : FormulaExpressionVisitor
             throw new InvalidOperationException($"Can't find parameter for '{name}'");
 
         return new FormulaConstantExpression(parameters, parameterExpression.Type);
+    }
+
+    private FormulaConstantExpression ResolveQueryParameter(FormulaQueryParameterExpression queryParameterExpression)
+    {
+        var name = queryParameterExpression.Name;
+        if (!_parameters.TryGetValue(name, out var parameters))
+            throw new InvalidOperationException($"Can't find parameter for '{name}'");
+
+        return new FormulaConstantExpression(parameters, queryParameterExpression.Type);
     }
 
     protected override Expression VisitRecordId(RecordIdPropertyReferenceExpression recordIdProperty)

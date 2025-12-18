@@ -20,6 +20,8 @@ internal abstract class FormulaExpressionVisitor : ExpressionVisitor
                     return VisitTableProperty(tableProperty);
                 case FormulaParameterExpression parameterExpression:
                     return VisitParameter(parameterExpression);
+                case FormulaQueryParameterExpression queryParameterExpression:
+                    return VisitQueryParameter(queryParameterExpression);
                 case RecordIdPropertyReferenceExpression recordIdProperty:
                     return VisitRecordId(recordIdProperty);
                 default:
@@ -36,4 +38,5 @@ internal abstract class FormulaExpressionVisitor : ExpressionVisitor
     protected abstract Expression VisitBinary(FormulaBinaryExpression binaryExpression);
     protected abstract Expression VisitConstant(FormulaConstantExpression constantExpression);
     protected abstract Expression VisitParameter(FormulaParameterExpression parameterExpression);
+    protected abstract Expression VisitQueryParameter(FormulaQueryParameterExpression queryParameterExpression);
 }

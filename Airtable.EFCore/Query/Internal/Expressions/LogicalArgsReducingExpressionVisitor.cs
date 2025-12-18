@@ -53,6 +53,7 @@ internal sealed class LogicalArgsReducingExpressionVisitor : FormulaExpressionVi
     }
 
     protected override Expression VisitParameter(FormulaParameterExpression parameterExpression) => parameterExpression;
+    protected override Expression VisitQueryParameter(FormulaQueryParameterExpression queryParameterExpression) => queryParameterExpression;
     protected override Expression VisitRecordId(RecordIdPropertyReferenceExpression recordIdProperty) => recordIdProperty;
     protected override Expression VisitTableProperty(TablePropertyReferenceExpression tableProperty) => tableProperty;
 }
@@ -89,6 +90,7 @@ internal sealed class TruthyValuesComparisonTransformingExpressionVisitor : Form
     }
 
     protected override Expression VisitParameter(FormulaParameterExpression parameterExpression) => parameterExpression;
+    protected override Expression VisitQueryParameter(FormulaQueryParameterExpression queryParameterExpression) => queryParameterExpression;
     protected override Expression VisitRecordId(RecordIdPropertyReferenceExpression recordIdProperty) => recordIdProperty;
     protected override Expression VisitTableProperty(TablePropertyReferenceExpression tableProperty) => tableProperty;
 }

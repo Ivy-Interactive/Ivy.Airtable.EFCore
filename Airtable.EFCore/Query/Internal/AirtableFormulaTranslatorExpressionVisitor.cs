@@ -1,4 +1,4 @@
-﻿using System.Linq.Expressions;
+using System.Linq.Expressions;
 using System.Reflection;
 using Airtable.EFCore.Query.Internal.MethodTranslators;
 using Microsoft.EntityFrameworkCore;
@@ -62,6 +62,18 @@ internal sealed class AirtableFormulaTranslatorExpressionVisitor : ExpressionVis
         if (node is StructuralTypeShaperExpression)
         {
             return new RootReferenceExpression(_entityType, "shaper");
+        }
+
+        if (node is QueryRootExpression)
+        {
+            return node;
+        }
+
+        if (node.GetType().Name == "QueryParameterExpression")
+        {
+            var nameProperty = node.GetType().GetProperty("Name");
+            var name = nameProperty?.GetValue(node) as string ?? throw new InvalidOperationException("QueryParameterExpression must have a Name");
+            return new FormulaQueryParameterExpression(name, node.Type);
         }
 
         return base.VisitExtension(node);
