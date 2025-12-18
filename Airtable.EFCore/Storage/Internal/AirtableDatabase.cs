@@ -20,7 +20,7 @@ internal sealed class AirtableDatabase : Database
 
     public override int SaveChanges(IList<IUpdateEntry> entries)
     {
-        throw new NotImplementedException();
+        return SaveChangesAsync(entries, CancellationToken.None).GetAwaiter().GetResult();
     }
 
     private static Fields GetFields(IUpdateEntry entry, IEnumerable<IProperty> properties)

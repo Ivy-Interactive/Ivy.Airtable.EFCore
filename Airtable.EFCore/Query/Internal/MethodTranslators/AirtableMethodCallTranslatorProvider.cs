@@ -11,6 +11,7 @@ internal sealed class AirtableMethodCallTranslatorProvider : IAirtableMethodCall
     {
         _translators.Add(new AirtableRegexMethodTranslator(formulaExpressionFactory));
         _translators.Add(new AirtableStringMethodTranslator(formulaExpressionFactory));
+        _translators.Add(new AirtableEnumerableMethodTranslator(formulaExpressionFactory));
     }
 
     public FormulaExpression? Translate(

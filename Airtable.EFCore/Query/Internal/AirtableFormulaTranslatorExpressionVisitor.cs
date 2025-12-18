@@ -156,6 +156,8 @@ internal sealed class AirtableFormulaTranslatorExpressionVisitor : ExpressionVis
             case ExpressionType.Or:
             case ExpressionType.OrElse:
                 return _formulaExpressionFactory.MakeOr(visitedLeft, visitedRight);
+            case ExpressionType.Coalesce:
+                return _formulaExpressionFactory.MakeCall("IF", visitedLeft, visitedLeft, visitedRight);
             default:
                 return _formulaExpressionFactory.MakeBinary(
                     node.NodeType,

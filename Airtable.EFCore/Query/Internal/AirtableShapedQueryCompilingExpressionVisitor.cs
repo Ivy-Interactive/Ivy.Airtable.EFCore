@@ -453,7 +453,22 @@ internal sealed class AirtableShapedQueryCompilingExpressionVisitor : ShapedQuer
             _base = _airtableQueryContext.AirtableClient;
         }
 
-        public IEnumerator<T> GetEnumerator() => throw new NotSupportedException("Synchronous queries are not supported by Airtable.EFCore. Please use Async versions instead.");
+        public IEnumerator<T> GetEnumerator()
+        {
+            var asyncEnumerator = GetAsyncEnumerator();
+            try
+            {
+                while (asyncEnumerator.MoveNextAsync().AsTask().GetAwaiter().GetResult())
+                {
+                    yield return asyncEnumerator.Current;
+                }
+            }
+            finally
+            {
+                asyncEnumerator.DisposeAsync().AsTask().GetAwaiter().GetResult();
+            }
+        }
+
         IEnumerator IEnumerable.GetEnumerator() => GetEnumerator();
 
         public async IAsyncEnumerator<T> GetAsyncEnumerator(CancellationToken cancellationToken = default)
@@ -493,14 +508,30 @@ internal sealed class AirtableShapedQueryCompilingExpressionVisitor : ShapedQuer
                 formula = _formulaGenerator.GetFormula(formulaExpr);
             }
 
-            var limit =
-                _selectExpression.Limit switch
+            int? limit = null;
+            if (_selectExpression.Limit != null)
+            {
+                var limitExpr = _selectExpression.Limit;
+                if (limitExpr is ConstantExpression constant)
                 {
-                    null => default(int?),
-                    ParameterExpression param => Convert.ToInt32(_airtableQueryContext.Parameters[param.Name!]),
-                    ConstantExpression constant => constant.GetConstantValue<int>(),
-                    _ => throw new InvalidOperationException("Failed to convert limit expression")
-                };
+                    limit = constant.GetConstantValue<int>();
+                }
+                else if (limitExpr is ParameterExpression param)
+                {
+                    limit = Convert.ToInt32(_airtableQueryContext.Parameters[param.Name!]);
+                }
+                else if (limitExpr.GetType().Name == "QueryParameterExpression")
+                {
+                    // Handle EF Core's QueryParameterExpression via reflection
+                    var nameProperty = limitExpr.GetType().GetProperty("Name");
+                    var name = nameProperty?.GetValue(limitExpr) as string ?? throw new InvalidOperationException("QueryParameterExpression must have a Name");
+                    limit = Convert.ToInt32(_airtableQueryContext.Parameters[name]);
+                }
+                else
+                {
+                    throw new InvalidOperationException($"Failed to convert limit expression of type {limitExpr.GetType().Name}");
+                }
+            }
 
             var returned = 0;
             AirtableListRecordsResponse? response = null;

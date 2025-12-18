@@ -113,10 +113,17 @@ internal sealed class AirtableProjectionBindingExpressionVisitor : ExpressionVis
                 return base.Visit(expression);
             }
 
-            return new ProjectionBindingExpression(
-                _selectExpression,
-                _selectExpression.AddToProjection(translation),
-                expression.Type);
+            // Only simple field references and record IDs can be fetched from Airtable in projections
+            if (translation is TablePropertyReferenceExpression or RecordIdPropertyReferenceExpression)
+            {
+                return new ProjectionBindingExpression(
+                    _selectExpression,
+                    _selectExpression.AddToProjection(translation),
+                    expression.Type);
+            }
+
+            // Complex formulas must be evaluated client-side
+            return base.Visit(expression);
         }
         else
         {
