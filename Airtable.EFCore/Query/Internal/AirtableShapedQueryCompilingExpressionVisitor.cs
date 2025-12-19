@@ -461,7 +461,6 @@ internal sealed class AirtableShapedQueryCompilingExpressionVisitor : ShapedQuer
         if (innerExpression is SelectExpression selectExpression)
         {
             var shaperLambdaMapping = new Dictionary<string, Expression<Action<AirtableQueryContext, List<AirtableRecord>, NavigationData>>>();
-            var fieldsMapping = new Dictionary<string, string[]>();
             var recordParameter = Expression.Parameter(typeof(AirtableRecord), "record");
             var shaperBlock = BuildShaperBlock(selectExpression, shapedQueryExpression.ShaperExpression, recordParameter);
             var shaperLambda = Expression.Lambda(
@@ -473,7 +472,7 @@ internal sealed class AirtableShapedQueryCompilingExpressionVisitor : ShapedQuer
             var navigationResolver = new NavigationResolver();
             foreach (var navigation in entityType.GetNavigations().Concat<INavigationBase>(entityType.GetSkipNavigations()))
             {
-                VisitNavigation(shaperLambdaMapping, fieldsMapping, navigationResolver, entityType, navigation);
+                VisitNavigation(shaperLambdaMapping, navigationResolver, entityType, navigation);
             }
 
             var shaperMapping = shaperLambdaMapping.ToDictionary(item => item.Key, item => item.Value.Compile());
@@ -483,7 +482,6 @@ internal sealed class AirtableShapedQueryCompilingExpressionVisitor : ShapedQuer
                 Expression.Constant(selectExpression),
                 Expression.Constant(shaperLambda.Compile()),
                 Expression.Constant(shaperMapping),
-                Expression.Constant(fieldsMapping),
                 Expression.Constant(navigationResolver),
                 Expression.Constant(
                         QueryCompilationContext.QueryTrackingBehavior == QueryTrackingBehavior.NoTrackingWithIdentityResolution)
@@ -607,7 +605,7 @@ internal sealed class AirtableShapedQueryCompilingExpressionVisitor : ShapedQuer
             navigationDataParameter);
     }
 
-    private void VisitNavigation(Dictionary<string, Expression<Action<AirtableQueryContext, List<AirtableRecord>, NavigationData>>> shaperMapping, Dictionary<string, string[]> fieldsMapping, NavigationResolver navigationResolver, IEntityType declaringEntityType, INavigationBase navigation)
+    private void VisitNavigation(Dictionary<string, Expression<Action<AirtableQueryContext, List<AirtableRecord>, NavigationData>>> shaperMapping, NavigationResolver navigationResolver, IEntityType declaringEntityType, INavigationBase navigation)
     {
         BuildNavigationLambdas(navigation, declaringEntityType, navigationResolver);
 
@@ -628,9 +626,6 @@ internal sealed class AirtableShapedQueryCompilingExpressionVisitor : ShapedQuer
 
         var shaperLambda = BuildShaperLambda(navigationSelectExpression, shaper, navigationTableName, targetEntityType.ClrType);
         shaperMapping[navigationTableName] = shaperLambda;
-
-        // Store which fields are needed for this navigation table
-        fieldsMapping[navigationTableName] = navigationSelectExpression.GetFields().ToArray();
 
         return;
     }
@@ -1071,35 +1066,17 @@ internal sealed class AirtableShapedQueryCompilingExpressionVisitor : ShapedQuer
                         entityMapping,
                         nameof(EntityMapping<object>.ReferencedRecordIndex))));
 
-            // Check bounds and null before accessing to handle missing/deleted records
-            var boundsCheck = Expression.AndAlso(
-                Expression.LessThan(
-                    referencedRecordIndex,
-                    Expression.Property(referencedEntities, nameof(List<object>.Count))),
-                Expression.GreaterThanOrEqual(
-                    referencedRecordIndex,
-                    Expression.Constant(0)));
-
-            var fixupStatements = new List<Expression>
-            {
+            loopExpressions.Add(
                 Expression.Assign(
                     referencedEntity,
                     Expression.MakeIndex(
                         referencedEntities,
                         referencedEntityListType.GetProperty("Item"),
-                        new[] { referencedRecordIndex }))
-            };
-
-            // Add null check after assignment
-            var entityNotNullCheck = Expression.NotEqual(
-                referencedEntity,
-                Expression.Constant(null, targetEntityType.ClrType));
-
-            var navigationFixupStatements = new List<Expression>();
+                        new[] { referencedRecordIndex })));
 
             if (navigation is ISkipNavigation)
             {
-                navigationFixupStatements.Add(
+                loopExpressions.Add(
                     Expression.Call(
                         Expression.Field(referencingEntity, backingFieldName),
                         referencedEntityCollectionAdd,
@@ -1107,27 +1084,17 @@ internal sealed class AirtableShapedQueryCompilingExpressionVisitor : ShapedQuer
             }
             else
             {
-                navigationFixupStatements.Add(
+                loopExpressions.Add(
                     Expression.Assign(
                         Expression.Field(referencingEntity, backingFieldName),
                         referencedEntity));
             }
 
-            navigationFixupStatements.Add(
+            loopExpressions.Add(
                 Expression.Call(
                     Expression.Field(referencedEntity, inverseBackingFieldName),
                     referencingEntityCollectionAdd,
                     new[] { referencingEntity }));
-
-            fixupStatements.Add(
-                Expression.IfThen(
-                    entityNotNullCheck,
-                    Expression.Block(navigationFixupStatements)));
-
-            loopExpressions.Add(
-                Expression.IfThen(
-                    boundsCheck,
-                    Expression.Block(fixupStatements)));
 
             loopExpressions.Add(Expression.PostIncrementAssign(entityMappingIndex));
             navigationFixupExpressions.Add(
@@ -1237,28 +1204,13 @@ internal sealed class AirtableShapedQueryCompilingExpressionVisitor : ShapedQuer
         public override void MarkEntitiesAsVisited() => FirstUnvisitedEntity = Entities.Count;
         public override void MarkEntitiesAsLoaded()
         {
-            // Check for null entities (missing/deleted records) and provide context
-            var nullIndices = new List<int>();
             for (var i = FirstUnloadedEntity; i < Entities.Count; i++)
             {
                 if (Entities[i] == null)
                 {
-                    nullIndices.Add(i);
+                    throw new InvalidOperationException("Not all entities loaded");
                 }
             }
-
-            if (nullIndices.Count > 0 && nullIndices.Count < RecordIds.Count)
-            {
-                // Some records are missing - don't throw, allow navigation fixup to skip missing entities
-                // This handles cases where records were deleted in Airtable or have referential integrity issues
-                // Navigation fixup will gracefully skip these missing entities
-            }
-            else if (nullIndices.Count == RecordIds.Count && RecordIds.Count > 0)
-            {
-                // All records are missing - this is likely an error
-                throw new InvalidOperationException($"None of the {RecordIds.Count} referenced entities were found in Airtable. Record IDs may be invalid.");
-            }
-
             FirstUnloadedEntity = Entities.Count;
         }
 
@@ -1320,7 +1272,6 @@ internal sealed class AirtableShapedQueryCompilingExpressionVisitor : ShapedQuer
         private readonly FormulaGenerator _formulaGenerator;
         private readonly Func<AirtableQueryContext, AirtableRecord, T> _shaper;
         private readonly Dictionary<string, Action<AirtableQueryContext, List<AirtableRecord>, NavigationData>> _shaperMapping;
-        private readonly Dictionary<string, string[]> _fieldsMapping;
         private readonly NavigationResolver _navigationResolver;
         private readonly NavigationData _navigationData;
         private readonly bool _standalone;
@@ -1331,7 +1282,6 @@ internal sealed class AirtableShapedQueryCompilingExpressionVisitor : ShapedQuer
             SelectExpression selectExpression,
             Func<AirtableQueryContext, AirtableRecord, T> shaper,
             Dictionary<string, Action<AirtableQueryContext, List<AirtableRecord>, NavigationData>> shaperMapping,
-            Dictionary<string, string[]> fieldsMapping,
             NavigationResolver navigationResolver,
             bool standalone)
         {
@@ -1340,7 +1290,6 @@ internal sealed class AirtableShapedQueryCompilingExpressionVisitor : ShapedQuer
             _formulaGenerator = new FormulaGenerator(airtableQueryContext.Parameters);
             _shaper = shaper;
             _shaperMapping = shaperMapping;
-            _fieldsMapping = fieldsMapping;
             _navigationResolver = navigationResolver;
             _navigationData = new();
             _standalone = standalone;
@@ -1519,50 +1468,38 @@ internal sealed class AirtableShapedQueryCompilingExpressionVisitor : ShapedQuer
                         continue;
                     }
 
-                    // Airtable has a formula length limit (~10,000 chars), so we need to batch
-                    // Record IDs are ~17 chars each, plus formula overhead = ~30 chars per ID
-                    // Use conservative batch size of 300 to stay well under limit
-                    const int MaxRecordsPerBatch = 300;
-
-                    // Get the fields needed for this table
-                    var fields = _fieldsMapping.TryGetValue(tableName, out var tableFields) ? tableFields : null;
-
-                    for (var batchStart = tableData.FirstUnloadedEntity; batchStart < tableData.RecordIds.Count; batchStart += MaxRecordsPerBatch)
+                    var filter = new StringBuilder("OR(");
+                    for (var index = tableData.FirstUnloadedEntity; index < tableData.RecordIds.Count; index++)
                     {
-                        var batchEnd = Math.Min(batchStart + MaxRecordsPerBatch, tableData.RecordIds.Count);
-                        var filter = new StringBuilder("OR(");
-
-                        for (var index = batchStart; index < batchEnd; index++)
+                        if (index > tableData.FirstUnloadedEntity)
                         {
-                            if (index > batchStart)
-                            {
-                                filter.Append(", ");
-                            }
-                            filter.Append("RECORD_ID() = \"");
-                            filter.Append(tableData.RecordIds[index]);
-                            filter.Append('"');
+                            filter.Append(", ");
                         }
-                        filter.Append(')');
-
-                        response = null;
-                        do
-                        {
-                            response = await _base.ListRecords(
-                                tableName,
-                                fields: fields,
-                                filterByFormula: filter.ToString(),
-                                offset: response?.Offset);
-
-                            if (response is null)
-                                throw new InvalidOperationException("Airtable response is null");
-
-                            if (!response.Success)
-                                throw new InvalidOperationException("Airtable error", response.AirtableApiError);
-
-                            newRecords.AddRange(response.Records);
-                        }
-                        while (response.Offset != null);
+                        filter.Append("RECORD_ID() = \"");
+                        filter.Append(tableData.RecordIds[index]);
+                        filter.Append('"');
                     }
+                    filter.Append(')');
+
+                    newRecords.Clear();
+
+                    response = null;
+                    do
+                    {
+                        response = await _base.ListRecords(
+                            tableName,
+                            filterByFormula: filter.ToString(),
+                            offset: response?.Offset);
+
+                        if (response is null)
+                            throw new InvalidOperationException("Airtable response is null");
+
+                        if (!response.Success)
+                            throw new InvalidOperationException("Airtable error", response.AirtableApiError);
+
+                        newRecords.AddRange(response.Records);
+                    }
+                    while (response.Offset != null);
 
                     _shaperMapping[tableName](_airtableQueryContext, newRecords, _navigationData);
                 }
