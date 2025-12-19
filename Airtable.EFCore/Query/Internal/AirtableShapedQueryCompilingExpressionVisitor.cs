@@ -294,16 +294,6 @@ internal sealed class AirtableShapedQueryCompilingExpressionVisitor : ShapedQuer
         [return: MaybeNull]
         private static T ReadRaw<T>(JsonElement jsonElement, JsonValueReaderWriter readerWriter)
         {
-            // Special handling for TimeSpan when Airtable sends it as a number (seconds)
-            if (typeof(T) == typeof(TimeSpan) || typeof(T) == typeof(TimeSpan?))
-            {
-                if (jsonElement.ValueKind == JsonValueKind.Number)
-                {
-                    var seconds = jsonElement.GetDouble();
-                    return (T?)(object?)TimeSpan.FromSeconds(seconds);
-                }
-            }
-
             var jsonString = JsonSerializer.Serialize(jsonElement);
             var readerManager = new Utf8JsonReaderManager(new JsonReaderData(Encoding.UTF8.GetBytes(jsonString)), null);
             readerManager.MoveNext();
